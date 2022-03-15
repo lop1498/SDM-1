@@ -1,0 +1,2 @@
+Link to the DBLP XML data: https://dblp.uni-trier.de/
+Link to the XML to CSV converter github repo: https://github.com/ThomHurks/dblp-to-csv
