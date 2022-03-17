@@ -48,6 +48,32 @@ def add_authors(path):
     return conn.query(query, parameters = {'rows':categories.to_dict('records')})
 
 
+def add_articles(path):
+    df = pd.read_csv(path, header=[0], nrows=50000)
+
+    query = '''
+            LOAD CSV
+            UNWIND $rows AS row
+            MERGE (c:Category {category: row.category})
+            RETURN count(*) as total
+            '''
+    return conn.query(query, parameters={'rows': categories.to_dict('records')})
+
+
+
+def add_articles(path):
+    n = pd.read_csv(path)
+    df = pd.read_csv(path, header=[0], nrows=50000)
+
+    query = '''
+            LOAD CSV
+            UNWIND $rows AS row
+            MERGE (c:Category {category: row.category})
+            RETURN count(*) as total
+            '''
+    return conn.query(query, parameters={'rows': categories.to_dict('records')})
+
+
 if __name__ == "__main__":
     #file = pd.read_csv('/Users/lop1498/Desktop/MDS/Q2/SDM/lab1/data/dblp_article.csv')
     path = '/Users/lop1498/Desktop/MDS/Q2/SDM/lab1/data/'
