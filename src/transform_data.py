@@ -68,13 +68,13 @@ def add_authors(path, path_db):
 
     query1 = '''
             LOAD CSV WITH HEADERS FROM $p1 AS line
-            CREATE(:Author {identifier: line.id, name: line.author})
+            CREATE(a:Author {id: line.id, name: line.author})
             '''
     print(df.head())
     query2 = '''
-            LOAD CSV WITH HEADERS FROM $p2 AS line
-            WITH line
-            MERGE (line.author)-[:write]->(line.article)
+            LOAD CSV WITH HEADERS FROM $p2 AS line2
+            MATCH (a:Author {id: line2.id}), (art:Article {title: line2.title})
+            CREATE (a)-[r:writes]->(art)
             '''
     conn.query(query1, parameters={'p1': p1})
     conn.query(query2, parameters={'p2': p2})
@@ -115,9 +115,11 @@ def add_articles(path, path_db):
 
 
 if __name__ == "__main__":
-    path = '/Users/lop1498/Desktop/MDS/Q2/SDM/lab1/data/'
-    path_db = '/Users/lop1498/Library/Application Support/Neo4j Desktop/Application/relate-data/dbmss/dbms-a925e2f5-b2ac-42e3-b89e-1ea1b962a96b/import'
+    paths_file = open('src/paths.txt', 'r')
+
+    path = paths_file.readline()[:-1] # Porque lee el \n del salto de linea
+    path_db = paths_file.readline()
 
     clean_database()
+    add_articles(path, path_db)
     add_authors(path, path_db)
-    #add_articles(path, path_db)
