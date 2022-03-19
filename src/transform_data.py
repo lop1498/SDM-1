@@ -1,6 +1,7 @@
 from neo4j import GraphDatabase
 import numpy as np
 import pandas as pd
+import urllib.parse
 
 
 class Neo4jConnection:
@@ -33,49 +34,52 @@ class Neo4jConnection:
         return response
 
 
-conn = Neo4jConnection(uri="bolt://localhost:7687", user="neo4j", pwd="difficulties-pushup-gaps")
+conn = Neo4jConnection(uri="bolt://localhost:7687", user="neo4j", pwd="sdm")
 
 
-def add_authors(path):
-    df = pd.read_csv(path, header=[0], nrows=50000)
+def clean_database():
+    query = "MATCH (n)-[r]-() DELETE r"
+    conn.query(query)
+    query = "MATCH (n) DELETE n"
+    return conn.query(query)
 
+
+def add_authors(path, path_db):
+    df = pd.read_csv(path+'dblp_author.csv', header=[0], nrows=50000, sep=';')
+    df.rename(columns={':ID':'id', 'author:string': 'author'}, inplace=True)
+
+    df.to_csv(path_db+"/authors.csv", index=False)
+    p = "file:///authors.csv"
     query = '''
-            LOAD CSV
-            UNWIND $rows AS row
-            MERGE (c:Category {category: row.category})
-            RETURN count(*) as total
+            LOAD CSV WITH HEADERS FROM $p AS line
+            CREATE(:Author {identifier: line.id, name: line.author})
             '''
-    return conn.query(query, parameters = {'rows':categories.to_dict('records')})
+
+    return conn.query(query, parameters={'p': p})
 
 
-def add_articles(path):
-    df = pd.read_csv(path, header=[0], nrows=50000)
+def add_articles(path, path_db):
+    l = list(pd.read_csv(path+'dblp_article_header.csv', sep=';').columns)
+    names = [name.split(':')[0] for name in l]
+    df = pd.read_csv(path+'dblp_article.csv', nrows=50000, sep=';', names=names)
 
+    df.to_csv(path_db + "/articles.csv", index=False)
+    p = "file:///articles.csv"
+
+    # attributes: key, mdate, title
+    # relations: list of authors
     query = '''
-            LOAD CSV
-            UNWIND $rows AS row
-            MERGE (c:Category {category: row.category})
-            RETURN count(*) as total
-            '''
-    return conn.query(query, parameters={'rows': categories.to_dict('records')})
+                LOAD CSV WITH HEADERS FROM $p AS line
+                CREATE(:Article {key: line.key, date: line.mdate, title: line.title})
+                '''
 
-
-
-def add_articles(path):
-    n = pd.read_csv(path)
-    df = pd.read_csv(path, header=[0], nrows=50000)
-
-    query = '''
-            LOAD CSV
-            UNWIND $rows AS row
-            MERGE (c:Category {category: row.category})
-            RETURN count(*) as total
-            '''
-    return conn.query(query, parameters={'rows': categories.to_dict('records')})
+    return conn.query(query, parameters={'p': p})
 
 
 if __name__ == "__main__":
-    #file = pd.read_csv('/Users/lop1498/Desktop/MDS/Q2/SDM/lab1/data/dblp_article.csv')
     path = '/Users/lop1498/Desktop/MDS/Q2/SDM/lab1/data/'
+    path_db = '/Users/lop1498/Library/Application Support/Neo4j Desktop/Application/relate-data/dbmss/dbms-a925e2f5-b2ac-42e3-b89e-1ea1b962a96b/import'
 
-    #conn.query('CREATE CONSTRAINT papers IF NOT EXISTS ON (p:Paper)     ASSERT p.id IS UNIQUE')
+    clean_database()
+    add_authors(path, path_db)
+    add_articles(path, path_db)
