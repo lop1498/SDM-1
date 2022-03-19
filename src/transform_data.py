@@ -45,26 +45,48 @@ def clean_database():
 
 
 def add_authors(path, path_db):
-    articles = pd.read_csv(path+'dblp_article.csv', header=[0], nrows=10000, sep=';')
+    # llegir els articles
+    l = list(pd.read_csv(path + 'dblp_article_header.csv', sep=';').columns)
+    names = [name.split(':')[0] for name in l]
+    articles = pd.read_csv(path + 'dblp_article.csv', nrows=10000, sep=';', names=names)
+    articles = articles[['article','volume','journal', 'author', 'title', 'mdate', 'key', 'year']].dropna()
+
+    articles['author'] = articles['author'].map(lambda x: list(x.split('|')))
+    articles = articles.explode('author')
+
+    # llegir els autors
     df = pd.read_csv(path+'dblp_author.csv', header=[0], nrows=10000, sep=';')
     df.rename(columns={':ID':'id', 'author:string': 'author'}, inplace=True)
 
-    df.to_csv(path_db+"/authors.csv", index=False)
-    p = "file:///authors.csv"
-    query = '''
-            LOAD CSV WITH HEADERS FROM $p AS line
+    # ens quedem amb els autors dels articles que tambe estiguin a authors
+    df = pd.merge(df, articles, how='inner', on=['author'])
+    df_aut = df.drop_duplicates(subset=['author'])
+    df_aut.to_csv(path_db + "/authors.csv", index=False)
+    p1 = "file:///authors.csv"
+    df.to_csv(path_db+"/authors_edges.csv", index=False)
+    p2 = "file:///authors_edges.csv"
+
+    query1 = '''
+            LOAD CSV WITH HEADERS FROM $p1 AS line
             CREATE(:Author {identifier: line.id, name: line.author})
             '''
+    print(df.head())
+    query2 = '''
+            LOAD CSV WITH HEADERS FROM $p2 AS line
+            WITH line
+            MERGE (line.author)-[:write]->(line.article)
+            '''
+    conn.query(query1, parameters={'p1': p1})
+    conn.query(query2, parameters={'p2': p2})
 
-    return conn.query(query, parameters={'p': p})
+    return
 
 
 def add_articles(path, path_db):
     l = list(pd.read_csv(path+'dblp_article_header.csv', sep=';').columns)
     names = [name.split(':')[0] for name in l]
-
     df = pd.read_csv(path+'dblp_article.csv', nrows=10000, sep=';', names=names)
-    df = df[['article','volume','journal', 'author', 'title', 'mdate', 'key', 'year']].dropna()
+    df = df[['article','volume','journal', 'author', 'title', 'mdate', 'key', 'year', 'author']].dropna()
 
     df.to_csv(path_db + "/articles.csv", index=False)
     p1 = "file:///articles.csv"
