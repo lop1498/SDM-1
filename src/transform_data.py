@@ -45,7 +45,8 @@ def clean_database():
 
 
 def add_authors(path, path_db):
-    df = pd.read_csv(path+'dblp_author.csv', header=[0], nrows=50000, sep=';')
+    articles = pd.read_csv(path+'dblp_article.csv', header=[0], nrows=10000, sep=';')
+    df = pd.read_csv(path+'dblp_author.csv', header=[0], nrows=10000, sep=';')
     df.rename(columns={':ID':'id', 'author:string': 'author'}, inplace=True)
 
     df.to_csv(path_db+"/authors.csv", index=False)
@@ -61,19 +62,34 @@ def add_authors(path, path_db):
 def add_articles(path, path_db):
     l = list(pd.read_csv(path+'dblp_article_header.csv', sep=';').columns)
     names = [name.split(':')[0] for name in l]
-    df = pd.read_csv(path+'dblp_article.csv', nrows=50000, sep=';', names=names)
+
+    df = pd.read_csv(path+'dblp_article.csv', nrows=10000, sep=';', names=names)
+    df = df[['article','volume','journal', 'author', 'title', 'mdate', 'key', 'year']].dropna()
 
     df.to_csv(path_db + "/articles.csv", index=False)
-    p = "file:///articles.csv"
+    p1 = "file:///articles.csv"
 
-    # attributes: key, mdate, title
-    # relations: list of authors
-    query = '''
-                LOAD CSV WITH HEADERS FROM $p AS line
-                CREATE(:Article {key: line.key, date: line.mdate, title: line.title})
+    volumes = df.drop_duplicates(subset=['volume'])
+    volumes.to_csv(path_db + "/volumes.csv", index=False)
+    p2 = "file:///volumes.csv"
+
+    query1 = '''
+                LOAD CSV WITH HEADERS FROM $p1 AS line1
+                CREATE(:Article {key: line1.key, date: line1.mdate, title: line1.title})
                 '''
 
-    return conn.query(query, parameters={'p': p})
+    query2 = '''
+                LOAD CSV WITH HEADERS FROM $p2 AS line2
+                CREATE(j:Journal {name: line2.journal, year: line2.year})
+                WITH j, line2
+                MATCH (a:Article {key: line2.key})
+                MERGE (a)-[r:published_in {volume: line2.volume}]->(j)
+                '''
+
+    conn.query(query1, parameters={'p1': p1})
+    conn.query(query2, parameters={'p2': p2})
+
+    return
 
 
 if __name__ == "__main__":
@@ -82,4 +98,4 @@ if __name__ == "__main__":
 
     clean_database()
     add_authors(path, path_db)
-    add_articles(path, path_db)
+    #add_articles(path, path_db)
