@@ -49,14 +49,14 @@ def add_authors(path, path_db):
     # llegir els articles
     l = list(pd.read_csv(path + 'dblp_article_header.csv', sep=';').columns)
     names = [name.split(':')[0] for name in l]
-    articles = pd.read_csv(path + 'dblp_article.csv', nrows=10000, sep=';', names=names)
+    articles = pd.read_csv(path + 'dblp_article.csv', nrows=5000, sep=';', names=names)
     articles = articles[['article','volume','journal', 'author', 'title', 'mdate', 'key', 'year']].dropna()
 
     articles['author'] = articles['author'].map(lambda x: list(x.split('|')))
     articles = articles.explode('author')
 
     # llegir els autors
-    df = pd.read_csv(path+'dblp_author.csv', header=[0], nrows=10000, sep=';')
+    df = pd.read_csv(path+'dblp_author.csv', header=[0], nrows=5000, sep=';')
     df.rename(columns={':ID':'id', 'author:string': 'author'}, inplace=True)
 
     # ens quedem amb els autors dels articles que tambe estiguin a authors
@@ -86,7 +86,7 @@ def add_authors(path, path_db):
 def add_articles(path, path_db):
     l = list(pd.read_csv(path+'dblp_article_header.csv', sep=';').columns)
     names = [name.split(':')[0] for name in l]
-    df = pd.read_csv(path+'dblp_article.csv', nrows=10000, sep=';', names=names)
+    df = pd.read_csv(path+'dblp_article.csv', nrows=5000, sep=';', names=names)
     df = df[['article','volume','journal', 'author', 'title', 'mdate', 'key', 'year', 'author']].dropna()
 
     df.to_csv(path_db + "/articles.csv", index=False)
@@ -118,7 +118,7 @@ def add_articles(path, path_db):
 def add_papers(path, path_db):
     l = list(pd.read_csv(path + 'dblp_phdthesis_header.csv', sep=';').columns)
     names = [name.split(':')[0] for name in l]
-    df = pd.read_csv(path + 'dblp_phdthesis.csv', nrows=10000, sep=';', names=names)
+    df = pd.read_csv(path + 'dblp_phdthesis.csv', nrows=5000, sep=';', names=names)
     df = df[['phdthesis', 'author', 'title', 'mdate', 'key', 'year', 'author']].dropna()
 
     df.to_csv(path_db + "/papers.csv", index=False)
@@ -155,7 +155,7 @@ def add_papers_authors(path, path_db):
     # read papers (phdthesis)
     l = list(pd.read_csv(path + 'dblp_phdthesis_header.csv', sep=';').columns)
     names = [name.split(':')[0] for name in l]
-    papers = pd.read_csv(path + 'dblp_phdthesis.csv', nrows=10000, sep=';', names=names)
+    papers = pd.read_csv(path + 'dblp_phdthesis.csv', nrows=5000, sep=';', names=names)
     papers = papers[['phdthesis', 'volume', 'author', 'title', 'mdate', 'key', 'year']].dropna()
 
     # explode papers dataframe by names
@@ -165,7 +165,7 @@ def add_papers_authors(path, path_db):
     p1 = "file:///papers_authors_edges.csv"
 
     # read authors names (that are related to articles, not papers)
-    authors = pd.read_csv(path+'dblp_author.csv', header=[0], nrows=10000, sep=';')
+    authors = pd.read_csv(path+'dblp_author.csv', header=[0], nrows=5000, sep=';')
     authors.rename(columns={':ID':'id', 'author:string': 'author'}, inplace=True)
 
     # cross product between papers authors and articles authors to mix both subsets
