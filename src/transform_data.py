@@ -124,37 +124,73 @@ def add_papers(path, path_db):
     df.to_csv(path_db + "/papers.csv", index=False)
     p1 = "file:///papers.csv"
 
+    # generate a dataframe with minimum 1 and maximum 5 papers cited (avoiding autociting) for each paper
+    paper_orig = []
+    paper_cited = []
+    papers = list(df['title'].unique())
+    for paper in df['title'].unique():
+        for i in range(np.random.randint(1,5)):
+            paper_orig.append(paper)
+            paper_cited.append(papers[i])
+    df_p = pd.DataFrame({'paper_orig': paper_orig, 'paper_cited': paper_cited})
+    df_p.to_csv(path_db + "/papers_cite.csv", index=False)
+    p2 = "file:///papers_cite.csv"
+
     query1 = '''
-                    LOAD CSV WITH HEADERS FROM $p1 AS line1
-                    CREATE(:Paper {key: line1.key, date: line1.mdate, title: line1.title})
-                    '''
+            LOAD CSV WITH HEADERS FROM $p1 AS line1
+            CREATE(:Paper {key: line1.key, date: line1.mdate, title: line1.title})
+            '''
+
+    query2 = '''
+            LOAD CSV WITH HEADERS FROM $p2 AS line
+            MATCH (a:Paper {title: line.paper_orig}), (b:Paper {title: line.paper_cited})
+            MERGE (a)-[:cites]->(b)
+            '''
 
     conn.query(query1, parameters={'p1': p1})
+    conn.query(query2, parameters={'p2': p2})
 
 
 def add_papers_authors(path, path_db):
-    # llegir els papers
+    # read papers (phdthesis)
     l = list(pd.read_csv(path + 'dblp_phdthesis_header.csv', sep=';').columns)
     names = [name.split(':')[0] for name in l]
     papers = pd.read_csv(path + 'dblp_phdthesis.csv', nrows=10000, sep=';', names=names)
     papers = papers[['phdthesis', 'volume', 'author', 'title', 'mdate', 'key', 'year']].dropna()
 
+    # explode papers dataframe by names
     papers['author'] = papers['author'].map(lambda x: list(x.split('|')))
     papers = papers.explode('author')
-
     papers.to_csv(path_db + "/papers_authors_edges.csv", index=False)
     p1 = "file:///papers_authors_edges.csv"
 
+    # read authors names (that are related to articles, not papers)
     authors = pd.read_csv(path+'dblp_author.csv', header=[0], nrows=10000, sep=';')
     authors.rename(columns={':ID':'id', 'author:string': 'author'}, inplace=True)
 
-    authors['_tmpkey'] = 1
-    papers['_tmpkey'] = 1
-    conc = pd.merge(authors, papers, on='_tmpkey').drop('_tmpkey', axis=1).sample(frac=0.0025)
-
+    # cross product between papers authors and articles authors to mix both subsets
+    conc = pd.merge(authors, papers, how='cross').sample(frac=0.0027)
     conc.to_csv(path_db + "/papers_authors_more_edges.csv", index=False)
     p2 = "file:///papers_authors_more_edges.csv"
 
+    # generate dataframe with reviewers (minimum 3 maximum 6 per paper, not repeated)
+    # take into account that an author of a paper can not be its own reviewer
+    auths = list(set(list(conc['author_x'].unique())+list(conc['author_y'].unique())))
+    authors_list = []
+    papers_list = []
+
+    for name,group in conc.groupby('title'):
+        auths_group = list(group['author_x'].unique() + list(group['author_y'].unique()))
+        auths_possible = list(set(auths)-set(auths_group))
+        for i in range(np.random.randint(3,6)):
+            authors_list.append(auths_possible[i])
+            papers_list.append(name)
+
+    df_reviews = pd.DataFrame({'paper':papers_list, 'author': authors_list})
+    df_reviews.to_csv(path_db + "/papers_reviews.csv", index=False)
+    p3 = "file:///papers_reviews.csv"
+
+    # queries
     query1 = '''
                 LOAD CSV WITH HEADERS FROM $p1 AS line
                 MERGE(a:Author {id: line.phdthesis, name: line.author})
@@ -175,9 +211,16 @@ def add_papers_authors(path, path_db):
                 MERGE (a)-[:writes_paper]->(pap)
                 '''
 
+    query4 = '''
+                LOAD CSV WITH HEADERS FROM $p3 AS line3
+                MATCH (a:Author {id: line3.id}), (pap:Paper {title: line3.paper})
+                MERGE (a)-[:writes_review]->(pap)
+               '''
+
     conn.query(query1, parameters={'p1': p1})
     conn.query(query2, parameters={'p1': p1})
     conn.query(query3, parameters={'p2': p2})
+    conn.query(query4, parameters={'p3': p3})
 
     return
 
