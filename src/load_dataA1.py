@@ -67,6 +67,25 @@ def add_authors(path, path_db):
     df.to_csv(path_db+"/authors_edges.csv", index=False)
     p2 = "file:///authors_edges.csv"
 
+    # generate dataframe with journal reviewers (minimum 3 maximum 6 per paper, not repeated)
+    # take into account that an author of a paper can not be its own reviewer
+    auths = list(df_aut['author'].unique())
+    print(len(auths))
+    print(len(articles['article'].unique()))
+    authors_list = []
+    papers_list = []
+
+    for name, group in articles.groupby('title'):
+        auths_group = list(group['author'].unique())
+        auths_possible = list(set(auths) - set(auths_group))
+        for i in range(np.random.randint(3, 4)):
+            authors_list.append(auths_possible[i])
+            papers_list.append(name)
+
+    df_reviews = pd.DataFrame({'title': papers_list, 'author': authors_list})
+    df_reviews.to_csv(path_db + "/papers_reviews_journal.csv", index=False)
+    p3 = "file:///papers_reviews_journal.csv"
+
     query1 = '''
             LOAD CSV WITH HEADERS FROM $p1 AS line
             CREATE(a:Author {id: line.id, name: line.author})
@@ -77,8 +96,16 @@ def add_authors(path, path_db):
             MATCH (a:Author {id: line2.id}), (art:Article {title: line2.title})
             CREATE (a)-[r:writes_article]->(art)
             '''
+
+    query3 = '''
+            LOAD CSV WITH HEADERS FROM $p3 AS line3
+            MATCH (a:Author {name: line3.author}), (art:Article {title: line3.title})
+            MERGE (a)-[:writes_review]->(art)
+           '''
+
     conn.query(query1, parameters={'p1': p1})
     conn.query(query2, parameters={'p2': p2})
+    conn.query(query3, parameters={'p3': p3})
 
     return
 
@@ -192,30 +219,30 @@ def add_papers_authors(path, path_db):
 
     # queries
     query1 = '''
-                LOAD CSV WITH HEADERS FROM $p1 AS line
-                MERGE(a:Author {id: line.phdthesis, name: line.author})
-                '''
+            LOAD CSV WITH HEADERS FROM $p1 AS line
+            MERGE(a:Author {id: line.phdthesis, name: line.author})
+            '''
 
     query2 = '''
-                LOAD CSV WITH HEADERS FROM $p1 AS line2
-                MATCH (a:Author {id: line2.phdthesis}), (pap:Paper {title: line2.title})
-                CREATE (a)-[r:writes_paper]->(pap)
-                CREATE (pap)-[c:corresponding_author]->(a)
-                '''
+            LOAD CSV WITH HEADERS FROM $p1 AS line2
+            MATCH (a:Author {id: line2.phdthesis}), (pap:Paper {title: line2.title})
+            CREATE (a)-[r:writes_paper]->(pap)
+            CREATE (pap)-[c:corresponding_author]->(a)
+            '''
 
     query3 = '''
-                LOAD CSV WITH HEADERS FROM $p2 AS line3
-                MERGE (a:Author {id: line3.id, name: line3.author_x})
-                WITH a, line3
-                MATCH (a:Author {id: line3.id}), (pap:Paper {key: line3.key})
-                MERGE (a)-[:writes_paper]->(pap)
-                '''
+            LOAD CSV WITH HEADERS FROM $p2 AS line3
+            MERGE (a:Author {id: line3.id, name: line3.author_x})
+            WITH a, line3
+            MATCH (a:Author {id: line3.id}), (pap:Paper {key: line3.key})
+            MERGE (a)-[:writes_paper]->(pap)
+            '''
 
     query4 = '''
-                LOAD CSV WITH HEADERS FROM $p3 AS line3
-                MATCH (a:Author {id: line3.id}), (pap:Paper {title: line3.paper})
-                MERGE (a)-[:writes_review]->(pap)
-               '''
+            LOAD CSV WITH HEADERS FROM $p3 AS line3
+            MATCH (a:Author {id: line3.id}), (pap:Paper {title: line3.paper})
+            MERGE (a)-[:writes_review]->(pap)
+           '''
 
     conn.query(query1, parameters={'p1': p1})
     conn.query(query2, parameters={'p1': p1})
