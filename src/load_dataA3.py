@@ -4,6 +4,9 @@ import numpy as np
 import pandas as pd
 import urllib.parse
 from sklearn.utils import shuffle
+from random import randint, seed, sample, choice
+from nltk.corpus import stopwords
+import random
 
 
 class Neo4jConnection:
@@ -121,7 +124,7 @@ def add_authors(path, path_db):
     conn.query(query4, parameters={'p4': p4})
     conn.query(query3, parameters={'p3': p3})
 
-    return
+    return n
 
 
 def add_articles(path, path_db):
@@ -138,17 +141,17 @@ def add_articles(path, path_db):
     p2 = "file:///volumes.csv"
 
     query1 = '''
-                LOAD CSV WITH HEADERS FROM $p1 AS line1
-                CREATE(:Article {key: line1.key, date: line1.mdate, title: line1.title})
-                '''
+            LOAD CSV WITH HEADERS FROM $p1 AS line1
+            CREATE(:Article {key: line1.key, date: line1.mdate, title: line1.title})
+            '''
 
     query2 = '''
-                LOAD CSV WITH HEADERS FROM $p2 AS line2
-                CREATE(j:Journal {name: line2.journal, year: line2.year})
-                WITH j, line2
-                MATCH (a:Article {key: line2.key})
-                MERGE (a)-[r:published_in {volume: line2.volume}]->(j)
-                '''
+            LOAD CSV WITH HEADERS FROM $p2 AS line2
+            CREATE(j:Journal {name: line2.journal, year: line2.year})
+            WITH j, line2
+            MATCH (a:Article {key: line2.key})
+            MERGE (a)-[r:published_in {volume: line2.volume}]->(j)
+            '''
 
     conn.query(query1, parameters={'p1': p1})
     conn.query(query2, parameters={'p2': p2})
@@ -161,6 +164,21 @@ def add_papers(path, path_db):
     names = [name.split(':')[0] for name in l]
     df = pd.read_csv(path + 'dblp_phdthesis.csv', nrows=2500, sep=';', names=names)
     df = df[['phdthesis', 'author', 'title', 'mdate', 'key', 'year', 'author']].dropna()
+
+    stop = stopwords.words('english') + stopwords.words('spanish') + stopwords.words('german') + stopwords.words(
+        'portuguese') + ['-', '.']
+    l_abstract = list(df['title'])
+    i = 0
+
+    for abs in l_abstract:
+        low = abs.lower()
+        spl = low.split()
+        resultwords = [word for word in spl if word.lower() not in stop]
+        result = ' '.join(resultwords)
+        l_abstract[i] = result
+        i += 1
+
+    df.insert(loc=len(df.columns), column='abstract', value=l_abstract)
 
     df.to_csv(path_db + "/papers.csv", index=False)
     p1 = "file:///papers.csv"
@@ -192,7 +210,7 @@ def add_papers(path, path_db):
     conn.query(query2, parameters={'p2': p2})
 
 
-def add_papers_authors(path, path_db):
+def add_papers_authors(path, path_db, n):
     # read papers (phdthesis)
     l = list(pd.read_csv(path + 'dblp_phdthesis_header.csv', sep=';').columns)
     names = [name.split(':')[0] for name in l]
@@ -220,7 +238,6 @@ def add_papers_authors(path, path_db):
     authors_list = []
     papers_list = []
     rev = []
-    n = 0
     r = 0
 
     for name,group in conc.groupby('title'):
@@ -282,6 +299,150 @@ def add_papers_authors(path, path_db):
     return
 
 
+def add_conferences(path, path_db):
+    df = pd.read_csv('../data/conferences.csv')
+    df.to_csv(path + "conferences.csv", index=False)
+    p1 = "file:///conferences.csv"
+
+    query1 = '''
+                LOAD CSV WITH HEADERS FROM $p1 AS line
+                CREATE(c:Conference {name:line.conference})
+                '''
+
+    query2 = '''
+                LOAD CSV WITH HEADERS FROM $p1 AS line
+                MATCH (con:Conference {name: line.conference}), (ci:City {name: line.city})
+                CREATE (con)-[r:held_in]->(ci)
+                '''
+
+    conn.query(query1, parameters={'p1': p1})
+    conn.query(query2, parameters={'p1': p1})
+
+    return
+
+
+def add_edge_papers_to_conference(path, path_db):
+    df_conf = pd.read_csv('../data/conferences.csv')
+    df_papers=pd.read_csv(path_db+'/papers.csv')
+
+    lpapers = list(df_papers['title'])
+    lconf = list(df_conf['conference'])
+    n = len(lpapers)
+
+    editions = []
+    year = []
+    conference_assignment = []
+
+    for i in range(n):
+        editions.append(randint(1,20))
+        year.append(randint(2017,2023))
+        conference_assignment.append(lconf[randint(0,len(lconf)-1)])
+
+    data = {'Paper':lpapers, 'Conference':conference_assignment, 'Edition':editions, 'Year':year}
+    df = pd.DataFrame(data)
+    df.to_csv(path_db + "/papers_and_conferences.csv", index=False)
+
+    p1 = "file:///papers_and_conferences.csv"
+
+    query1 = '''
+                LOAD CSV WITH HEADERS FROM $p1 AS line
+                MATCH (pap:Paper {title: line.Paper}), (co:Conference {name: line.Conference})
+                CREATE (pap)-[r:published_in {Edition: line.Edition, Year: line.Year}]->(co)
+                '''
+
+    conn.query(query1, parameters={'p1': p1})
+
+    return
+
+
+def add_topics(path, path_db):
+    df_papers = pd.read_csv(path_db + '/papers.csv', nrows=5000)
+    lpapers = list(df_papers['title'])
+    keywords = list(df_papers['abstract'])
+    i = 0
+
+    for abs in keywords:
+        w = abs.split()
+        keys = sample(w, min(len(w)-1, randint(2,3)))
+
+        keywords[i] = ':'.join(keys)
+        i += 1
+
+    df_topics = pd.read_csv('../data/topics.csv')
+    ltopics = list(df_topics['Topics'])
+    topics = [None] * 5000
+
+    for i in range(len(topics)):
+        topics[i] = choice(ltopics)
+
+    df = pd.DataFrame({'paper': lpapers, 'keywords' : keywords, 'topics' : topics})
+    df.to_csv(path + "paper_key_topic.csv", index=False)
+
+    p1 = "file:///topics.csv"
+    p2 = "file:///paper_key_topic.csv"
+
+    query1 = '''
+                LOAD CSV WITH HEADERS FROM $p1 AS line
+                CREATE(t:Topic {name:line.Topics})
+            '''
+
+    query2 = '''
+                LOAD CSV WITH HEADERS FROM $p2 AS line
+                MATCH (pap:Paper {title: line.paper}), (to:Topic {name: line.topics})
+                CREATE (pap)-[r:about {keywords:split(coalesce(line.keywords,""), ":")}]->(to)
+            '''
+
+    conn.query(query1, parameters={'p1': p1})
+    conn.query(query2, parameters={'p2': p2})
+
+    return
+
+
+def add_cities(path, path_db):
+    df = pd.read_csv('../data/worldcities.csv', nrows=50)
+    df.to_csv(path_db + "/cities.csv", index=False)
+    p1 = "file:///cities.csv"
+
+    query1 = '''
+                LOAD CSV WITH HEADERS FROM $p1 AS line
+                CREATE(c:City {name:line.city})
+                '''
+
+    conn.query(query1, parameters={'p1': p1})
+    return
+
+
+def add_organizations(path, path_db):
+    #read organizations
+    df = pd.read_csv('../data/organizations.csv')
+    org = list(df['organizations'])
+    df.to_csv(path_db + "/organizations.csv", index=False)
+    p1 = "file:///organizations.csv"
+
+    # read authors
+    df = pd.read_csv(path + 'dblp_author.csv', header=[0], nrows=2500, sep=';')
+    df.rename(columns={':ID': 'id', 'author:string': 'author'}, inplace=True)
+    df['organization'] = [random.choice(org) for i in range(df.shape[0])]
+    df.to_csv(path_db + "/organizations_edges.csv", index=False)
+    p2 = "file:///organizations_edges.csv"
+
+    query1 = '''
+            LOAD CSV WITH HEADERS FROM $p1 AS line
+            CREATE(a:Organization {name: line.organizations})
+            '''
+
+    query2 = '''
+            LOAD CSV WITH HEADERS FROM $p2 AS line
+            MATCH (a:Author {id: line.id}), (org:Organization {name: line.organization})
+            CREATE (a)-[r:is_affiliated]->(org)            
+            '''
+
+    conn.query(query1, parameters={'p1': p1})
+    conn.query(query2, parameters={'p2': p2})
+
+    return
+
+
 if __name__ == "__main__":
     #paths_file = open('src/paths.txt', 'r')
     #path = paths_file.readline()[:-1] # Porque lee el \n del salto de linea
@@ -291,6 +452,11 @@ if __name__ == "__main__":
 
     clean_database()
     add_articles(path, path_db)
-    add_authors(path, path_db)
+    n = add_authors(path, path_db)
     add_papers(path, path_db)
-    add_papers_authors(path, path_db)
+    add_papers_authors(path, path_db, n)
+    add_organizations(path, path_db)
+    add_cities(path, path_db)
+    add_conferences(path, path_db)
+    add_edge_papers_to_conference(path,path_db)
+    #add_topics(path, path_db)
