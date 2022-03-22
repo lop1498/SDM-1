@@ -179,6 +179,8 @@ def add_papers(path, path_db):
         i += 1
 
     df.insert(loc=len(df.columns), column='abstract', value=l_abstract)
+    acc = [np.random.choice([0,1], p=[0.2,0.8]) for i in range(df.shape[0])]
+    df.insert(loc=len(df.columns), column='accepted', value=acc)
 
     df.to_csv(path_db + "/papers.csv", index=False)
     p1 = "file:///papers.csv"
@@ -188,16 +190,17 @@ def add_papers(path, path_db):
     paper_cited = []
     papers = list(df['title'].unique())
     for paper in df['title'].unique():
-        for i in range(np.random.randint(1,5)):
+        papers_pos = list(set(papers) - {paper})
+        for i in range(np.random.randint(5,20)):
             paper_orig.append(paper)
-            paper_cited.append(papers[i])
+            paper_cited.append(random.choice(papers_pos))
     df_p = pd.DataFrame({'paper_orig': paper_orig, 'paper_cited': paper_cited})
     df_p.to_csv(path_db + "/papers_cite.csv", index=False)
     p2 = "file:///papers_cite.csv"
 
     query1 = '''
             LOAD CSV WITH HEADERS FROM $p1 AS line1
-            CREATE(:Paper {key: line1.key, date: line1.mdate, title: line1.title})
+            CREATE(:Paper {key: line1.key, date: line1.mdate, title: line1.title, abstract: line1.abstract, accepted: line1.accepted})
             '''
 
     query2 = '''
@@ -301,7 +304,7 @@ def add_papers_authors(path, path_db, n):
 
 def add_conferences(path, path_db):
     df = pd.read_csv('../data/conferences.csv')
-    df.to_csv(path + "conferences.csv", index=False)
+    df.to_csv(path_db + "/conferences.csv", index=False)
     p1 = "file:///conferences.csv"
 
     query1 = '''
@@ -323,7 +326,7 @@ def add_conferences(path, path_db):
 
 def add_edge_papers_to_conference(path, path_db):
     df_conf = pd.read_csv('../data/conferences.csv')
-    df_papers=pd.read_csv(path_db+'/papers.csv')
+    df_papers = pd.read_csv(path_db+'/papers.csv')
 
     lpapers = list(df_papers['title'])
     lconf = list(df_conf['conference'])
@@ -459,4 +462,4 @@ if __name__ == "__main__":
     add_cities(path, path_db)
     add_conferences(path, path_db)
     add_edge_papers_to_conference(path,path_db)
-    #add_topics(path, path_db)
+    # add_topics(path, path_db)

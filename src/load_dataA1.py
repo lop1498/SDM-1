@@ -1,3 +1,5 @@
+import random
+
 from neo4j import GraphDatabase
 import numpy as np
 import pandas as pd
@@ -172,9 +174,10 @@ def add_papers(path, path_db):
     paper_cited = []
     papers = list(df['title'].unique())
     for paper in df['title'].unique():
-        for i in range(np.random.randint(1,5)):
+        papers_pos = list(set(papers) - {paper})
+        for i in range(np.random.randint(5,20)):
             paper_orig.append(paper)
-            paper_cited.append(papers[i])
+            paper_cited.append(random.choice(papers_pos))
     df_p = pd.DataFrame({'paper_orig': paper_orig, 'paper_cited': paper_cited})
     df_p.to_csv(path_db + "/papers_cite.csv", index=False)
     p2 = "file:///papers_cite.csv"
