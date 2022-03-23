@@ -4,7 +4,7 @@
 *.gz
 *paths.txt
 *.pdf
-*AppImage./neo4j-desktop-1.4.13-x86_64.AppImage./neo4j-desktop-1.4.13-x86_64.AppImage
+*AppImage
 ./data/dblp_phdthesis.csv
 ./data/dblp_author_authored_by.csv
 ./data/dblp_inproceedings.csv
