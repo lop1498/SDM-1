@@ -177,11 +177,24 @@ def add_articles(path, path_db):
 
     volumes.to_csv(path_db + "/volumes.csv", index=False)
     
+    paper_l = list(pd.read_csv(path_db+'/papers.csv')['title'])
+
+    journals = list(volumes['journal'])
+    j_fin = [None] * len(paper_l)
+
+    for i in range(len(paper_l)):
+        j_fin[i] = random.choice(journals)
+
+
+    df_fin = pd.DataFrame({'paper': paper_l, 'journal': j_fin})
+    df_fin.to_csv(path_db + "/paper_journal.csv", index=False)
+
     p2 = "file:///volumes.csv"
 
     p3 = "file:///articles_cite.csv"
     p4 = "file:///papers_cite_article.csv"
     p5 = "file:///article_cite_paper.csv"
+    p6 = "file:///paper_journal.csv"
 
     query1 = '''
                 LOAD CSV WITH HEADERS FROM $p1 AS line1
@@ -190,7 +203,7 @@ def add_articles(path, path_db):
 
     query2 = '''
                 LOAD CSV WITH HEADERS FROM $p2 AS line2
-                CREATE(j:Journal {name: line2.journal, year: line2.year})
+                MERGE(j:Journal {name: line2.journal, year: toInteger(line2.year)})
                 WITH j, line2
                 MATCH (a:Article {key: line2.key})
                 MERGE (a)-[r:published_in {volume: line2.volume}]->(j)
@@ -211,12 +224,20 @@ def add_articles(path, path_db):
             MATCH (a:Article {title: line.article_orig}), (b:Paper {title: line.paper_cited})
             MERGE (a)-[:cites]->(b)
             '''
+    query6 = '''
+            LOAD CSV WITH HEADERS FROM $p6 AS line
+            MATCH (a:Paper {title: line.paper}), (b:Journal {name: line.journal})
+            MERGE (a)-[:published_in]->(b)
+            '''
+
 
     conn.query(query1, parameters={'p1': p1})
     conn.query(query2, parameters={'p2': p2})
     conn.query(query3, parameters={'p3': p3})
     conn.query(query4, parameters={'p4': p4})
     conn.query(query5, parameters={'p5': p5})
+    conn.query(query6, parameters={'p6': p6})
+
 
     return
 
@@ -403,15 +424,19 @@ def add_edge_papers_to_conference(path, path_db):
 
 
 def add_topics(path, path_db):
-    df_papers = pd.read_csv(path_db+'/papers.csv', nrows=5000)
+    df_papers = pd.read_csv(path_db+'/papers.csv')
     lpapers = list(df_papers['title'])
     keywords = list(df_papers['abstract'])
     i = 0
 
+    db_kw=['data_management', 'indexing', 'data_modeling', 'big_data', 'data_processing', 'data_storage','data_querying']
+
+
     for abs in keywords:
         w = abs.split()
         keys = sample(w, min(len(w)-1, randint(2,3)))
-
+        if randint(0,10)<8:
+            keys.append(random.choice(db_kw))
         keywords[i] = ':'.join(keys)
         i += 1
 
