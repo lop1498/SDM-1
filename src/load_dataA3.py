@@ -1,12 +1,14 @@
-import lorem
+import random
+
 from neo4j import GraphDatabase
 import numpy as np
 import pandas as pd
 import urllib.parse
+from neo4j import GraphDatabase
 from sklearn.utils import shuffle
 from random import randint, seed, sample, choice
 from nltk.corpus import stopwords
-import random
+import time
 
 
 class Neo4jConnection:
@@ -50,20 +52,20 @@ def clean_database():
 
 
 def add_authors(path, path_db):
-    # read articles
+    # llegir els articles
     l = list(pd.read_csv(path + 'dblp_article_header.csv', sep=';').columns)
     names = [name.split(':')[0] for name in l]
-    articles = pd.read_csv(path + 'dblp_article.csv', nrows=2500, sep=';', names=names)
+    articles = pd.read_csv(path + 'dblp_article.csv', nrows=1500, sep=';', names=names)
     articles = articles[['article','volume','journal', 'author', 'title', 'mdate', 'key', 'year']].dropna()
 
     articles['author'] = articles['author'].map(lambda x: list(x.split('|')))
     articles = articles.explode('author')
 
-    # read authors
-    df = pd.read_csv(path+'dblp_author.csv', header=[0], nrows=2500, sep=';')
+    # llegir els autors
+    df = pd.read_csv(path+'dblp_author.csv', header=[0], nrows=5000, sep=';')
     df.rename(columns={':ID':'id', 'author:string': 'author'}, inplace=True)
 
-    # ens quedem amb els autors dels articles
+    # ens quedem amb els autors dels articles que tambe estiguin a authors
     df = pd.merge(df, articles, how='inner', on=['author'])
     df_aut = df.drop_duplicates(subset=['author'])
     df_aut.to_csv(path_db + "/authors.csv", index=False)
@@ -76,25 +78,17 @@ def add_authors(path, path_db):
     auths = list(df_aut['author'].unique())
     authors_list = []
     papers_list = []
-    rev = []
-    n = 0
-    r = 0
+
     for name, group in articles.groupby('title'):
         auths_group = list(group['author'].unique())
         auths_possible = list(set(auths) - set(auths_group))
         for i in range(np.random.randint(3, 4)):
             authors_list.append(auths_possible[i])
             papers_list.append(name)
-            n += 1
-            rev.append(n)
 
-    df_reviews = pd.DataFrame({'title': papers_list, 'author': authors_list, 'review': rev})
+    df_reviews = pd.DataFrame({'title': papers_list, 'author': authors_list})
     df_reviews.to_csv(path_db + "/papers_reviews_journal.csv", index=False)
     p3 = "file:///papers_reviews_journal.csv"
-
-    df_node_rev = pd.DataFrame({'id':range(0,n,1), 'description': [lorem.sentence() for i in range(n)], 'decision': np.random.randint(0,2,n)})
-    df_node_rev.to_csv(path_db + "/articles_nodes_reviews.csv", index=False)
-    p4 = "file:///articles_nodes_reviews.csv"
 
     query1 = '''
             LOAD CSV WITH HEADERS FROM $p1 AS line
@@ -109,52 +103,141 @@ def add_authors(path, path_db):
 
     query3 = '''
             LOAD CSV WITH HEADERS FROM $p3 AS line3
-            MATCH (a:Author {name: line3.author}), (art:Article {title: line3.title}), (r:Review {id: line3.review})
-            MERGE (a)-[:writes_review]->(r)
-            MERGE (r)-[:about]->(art)
-           '''
-
-    query4 = '''
-            LOAD CSV WITH HEADERS FROM $p4 AS line4
-            CREATE(a:Review {id: line4.id, description: line4.description, decision: line4.decision})
+            MATCH (a:Author {name: line3.author}), (art:Article {title: line3.title})
+            MERGE (a)-[:writes_review]->(art)
            '''
 
     conn.query(query1, parameters={'p1': p1})
     conn.query(query2, parameters={'p2': p2})
-    conn.query(query4, parameters={'p4': p4})
     conn.query(query3, parameters={'p3': p3})
 
-    return n
+    return
 
 
 def add_articles(path, path_db):
     l = list(pd.read_csv(path+'dblp_article_header.csv', sep=';').columns)
     names = [name.split(':')[0] for name in l]
-    df = pd.read_csv(path+'dblp_article.csv', nrows=2500, sep=';', names=names)
+    df = pd.read_csv(path+'dblp_article.csv', nrows=1500, sep=';', names=names)
     df = df[['article','volume','journal', 'author', 'title', 'mdate', 'key', 'year', 'author']].dropna()
 
+    # generate a dataframe with minimum 1 and maximum 5 articles cited (avoiding autociting) for each article
+    article_orig = []
+    article_cited = []
+    articles = list(df['title'].unique())
+
+    for article in df['title'].unique():
+        article_pos = list(set(articles) - {article})
+        for i in range(np.random.randint(5, 12)):
+            article_orig.append(article)
+            article_cited.append(random.choice(article_pos))
+    df_a = pd.DataFrame({'article_orig': article_orig, 'article_cited': article_cited})
+    df_a.to_csv(path_db + "/articles_cite.csv", index=False)
     df.to_csv(path_db + "/articles.csv", index=False)
+
+    # Papers cite articles
+    df = pd.read_csv(path_db + '/papers.csv')
+    papers = list(df['title'].unique())
+
+
+    paper_orig = []
+    paper_cited = []
+    
+    for paper in df['title'].unique():
+        for i in range(np.random.randint(2, 7)):
+            paper_orig.append(paper)
+            paper_cited.append(random.choice(articles))
+    df_p = pd.DataFrame({'paper_orig': paper_orig, 'article_cited': paper_cited})
+    df_p.to_csv(path_db + "/papers_cite_article.csv", index=False)
+
+    # Article cites paper
+    paper_orig = []
+    paper_cited = []
+
+    for article in articles:
+        for i in range(np.random.randint(2, 7)):
+            paper_orig.append(article)
+            paper_cited.append(random.choice(papers))
+    df_p = pd.DataFrame({'article_orig': paper_orig, 'paper_cited': paper_cited})
+    df_p.to_csv(path_db + "/article_cite_paper.csv", index=False)
+
+
     p1 = "file:///articles.csv"
 
+    df = pd.read_csv(path+'dblp_article.csv', nrows=1500, sep=';', names=names)
+    df = df[['article','volume','journal', 'author', 'title', 'mdate', 'key', 'year', 'author']].dropna()
+    
     volumes = df.drop_duplicates(subset=['volume'])
+
+    years = []
+
+    for _ in range(len(volumes)):
+        years.append(randint(2015,2019))
+
+    volumes['year'] = years
+
     volumes.to_csv(path_db + "/volumes.csv", index=False)
+    
+    paper_l = list(pd.read_csv(path_db+'/papers.csv')['title'])
+
+    journals = list(volumes['journal'])
+    j_fin = [None] * len(paper_l)
+
+    for i in range(len(paper_l)):
+        j_fin[i] = random.choice(journals)
+
+
+    df_fin = pd.DataFrame({'paper': paper_l, 'journal': j_fin})
+    df_fin.to_csv(path_db + "/paper_journal.csv", index=False)
+
     p2 = "file:///volumes.csv"
 
+    p3 = "file:///articles_cite.csv"
+    p4 = "file:///papers_cite_article.csv"
+    p5 = "file:///article_cite_paper.csv"
+    p6 = "file:///paper_journal.csv"
+
     query1 = '''
-            LOAD CSV WITH HEADERS FROM $p1 AS line1
-            CREATE(:Article {key: line1.key, date: line1.mdate, title: line1.title})
-            '''
+                LOAD CSV WITH HEADERS FROM $p1 AS line1
+                CREATE(:Article {key: line1.key, date: line1.mdate, title: line1.title})
+                '''
 
     query2 = '''
-            LOAD CSV WITH HEADERS FROM $p2 AS line2
-            CREATE(j:Journal {name: line2.journal, year: line2.year})
-            WITH j, line2
-            MATCH (a:Article {key: line2.key})
-            MERGE (a)-[r:published_in {volume: line2.volume}]->(j)
+                LOAD CSV WITH HEADERS FROM $p2 AS line2
+                MERGE(j:Journal {name: line2.journal, year: toInteger(line2.year)})
+                WITH j, line2
+                MATCH (a:Article {key: line2.key})
+                MERGE (a)-[r:published_in {volume: line2.volume}]->(j)
+                '''
+
+    query3 = '''
+            LOAD CSV WITH HEADERS FROM $p3 AS line
+            MATCH (a:Article {title: line.article_orig}), (b:Article {title: line.article_cited})
+            CREATE (a)-[c:cites]->(b)
             '''
+    query4 = '''
+            LOAD CSV WITH HEADERS FROM $p4 AS line
+            MATCH (a:Paper {title: line.paper_orig}), (b:Article {title: line.article_cited})
+            MERGE (a)-[:cites]->(b)
+            '''
+    query5 = '''
+            LOAD CSV WITH HEADERS FROM $p5 AS line
+            MATCH (a:Article {title: line.article_orig}), (b:Paper {title: line.paper_cited})
+            MERGE (a)-[:cites]->(b)
+            '''
+    query6 = '''
+            LOAD CSV WITH HEADERS FROM $p6 AS line
+            MATCH (a:Paper {title: line.paper}), (b:Journal {name: line.journal})
+            MERGE (a)-[:published_in]->(b)
+            '''
+
 
     conn.query(query1, parameters={'p1': p1})
     conn.query(query2, parameters={'p2': p2})
+    conn.query(query3, parameters={'p3': p3})
+    conn.query(query4, parameters={'p4': p4})
+    conn.query(query5, parameters={'p5': p5})
+    conn.query(query6, parameters={'p6': p6})
+
 
     return
 
@@ -162,25 +245,22 @@ def add_articles(path, path_db):
 def add_papers(path, path_db):
     l = list(pd.read_csv(path + 'dblp_phdthesis_header.csv', sep=';').columns)
     names = [name.split(':')[0] for name in l]
-    df = pd.read_csv(path + 'dblp_phdthesis.csv', nrows=2500, sep=';', names=names)
+    df = pd.read_csv(path + 'dblp_phdthesis.csv', nrows=1500, sep=';', names=names)
     df = df[['phdthesis', 'author', 'title', 'mdate', 'key', 'year', 'author']].dropna()
 
-    stop = stopwords.words('english') + stopwords.words('spanish') + stopwords.words('german') + stopwords.words(
-        'portuguese') + ['-', '.']
+    stop = stopwords.words('english') + stopwords.words('spanish') + stopwords.words('german') + stopwords.words('portuguese') + ['-','.']
     l_abstract = list(df['title'])
     i = 0
 
     for abs in l_abstract:
         low = abs.lower()
         spl = low.split()
-        resultwords = [word for word in spl if word.lower() not in stop]
+        resultwords  = [word for word in spl if word.lower() not in stop]
         result = ' '.join(resultwords)
         l_abstract[i] = result
         i += 1
 
     df.insert(loc=len(df.columns), column='abstract', value=l_abstract)
-    acc = [np.random.choice([0,1], p=[0.2,0.8]) for i in range(df.shape[0])]
-    df.insert(loc=len(df.columns), column='accepted', value=acc)
 
     df.to_csv(path_db + "/papers.csv", index=False)
     p1 = "file:///papers.csv"
@@ -191,7 +271,7 @@ def add_papers(path, path_db):
     papers = list(df['title'].unique())
     for paper in df['title'].unique():
         papers_pos = list(set(papers) - {paper})
-        for i in range(np.random.randint(5,20)):
+        for i in range(np.random.randint(5, 20)):
             paper_orig.append(paper)
             paper_cited.append(random.choice(papers_pos))
     df_p = pd.DataFrame({'paper_orig': paper_orig, 'paper_cited': paper_cited})
@@ -200,7 +280,7 @@ def add_papers(path, path_db):
 
     query1 = '''
             LOAD CSV WITH HEADERS FROM $p1 AS line1
-            CREATE(:Paper {key: line1.key, date: line1.mdate, title: line1.title, abstract: line1.abstract, accepted: line1.accepted})
+            CREATE(:Paper {key: line1.key, date: line1.mdate, title: line1.title, abstract: line1.abstract})
             '''
 
     query2 = '''
@@ -213,11 +293,11 @@ def add_papers(path, path_db):
     conn.query(query2, parameters={'p2': p2})
 
 
-def add_papers_authors(path, path_db, n):
+def add_papers_authors(path, path_db):
     # read papers (phdthesis)
     l = list(pd.read_csv(path + 'dblp_phdthesis_header.csv', sep=';').columns)
     names = [name.split(':')[0] for name in l]
-    papers = pd.read_csv(path + 'dblp_phdthesis.csv', nrows=2500, sep=';', names=names)
+    papers = pd.read_csv(path + 'dblp_phdthesis.csv', nrows=5000, sep=';', names=names)
     papers = papers[['phdthesis', 'volume', 'author', 'title', 'mdate', 'key', 'year']].dropna()
 
     # explode papers dataframe by names
@@ -231,7 +311,7 @@ def add_papers_authors(path, path_db, n):
     authors.rename(columns={':ID':'id', 'author:string': 'author'}, inplace=True)
 
     # cross product between papers authors and articles authors to mix both subsets
-    conc = pd.merge(authors, papers, how='cross').sample(frac=0.0027)
+    conc = pd.merge(authors, papers, how='cross').sample(frac=0.013)
     conc.to_csv(path_db + "/papers_authors_more_edges.csv", index=False)
     p2 = "file:///papers_authors_more_edges.csv"
 
@@ -240,8 +320,6 @@ def add_papers_authors(path, path_db, n):
     auths = list(set(list(conc['author_x'].unique())+list(conc['author_y'].unique())))
     authors_list = []
     papers_list = []
-    rev = []
-    r = 0
 
     for name,group in conc.groupby('title'):
         auths_group = list(group['author_x'].unique() + list(group['author_y'].unique()))
@@ -249,17 +327,11 @@ def add_papers_authors(path, path_db, n):
         for i in range(np.random.randint(3,6)):
             authors_list.append(auths_possible[i])
             papers_list.append(name)
-            n += 1
-            rev.append(n)
 
-    df_reviews = pd.DataFrame({'paper':papers_list, 'author': authors_list, 'review': rev})
+    df_reviews = pd.DataFrame({'paper':papers_list, 'author': authors_list})
     df_reviews.to_csv(path_db + "/papers_reviews.csv", index=False)
     p3 = "file:///papers_reviews.csv"
 
-    df_node_rev = pd.DataFrame({'id': range(0, n, 1), 'description': [lorem.sentence() for i in range(n)],
-                                'decision': np.random.randint(0, 2, n)})
-    df_node_rev.to_csv(path_db + "/papers_nodes_reviews.csv", index=False)
-    p4 = "file:///papers_nodes_reviews.csv"
     # queries
     query1 = '''
             LOAD CSV WITH HEADERS FROM $p1 AS line
@@ -283,27 +355,20 @@ def add_papers_authors(path, path_db, n):
 
     query4 = '''
             LOAD CSV WITH HEADERS FROM $p3 AS line3
-            MATCH (a:Author {name: line3.author}), (pap:Paper {title: line3.paper}), (r:Review {id: line3.review})
-            MERGE (a)-[:writes_review]->(r)
-            MERGE (r)-[:about]->(pap)
-           '''
-
-    query5 = '''
-            LOAD CSV WITH HEADERS FROM $p4 AS line4
-            MERGE(a:Review {id: line4.id, description: line4.description, decision: line4.decision})
+            MATCH (a:Author {id: line3.id}), (pap:Paper {title: line3.paper})
+            MERGE (a)-[:writes_review]->(pap)
            '''
 
     conn.query(query1, parameters={'p1': p1})
     conn.query(query2, parameters={'p1': p1})
     conn.query(query3, parameters={'p2': p2})
-    conn.query(query5, parameters={'p4': p4})
     conn.query(query4, parameters={'p3': p3})
 
     return
 
 
 def add_conferences(path, path_db):
-    df = pd.read_csv('../data/conferences.csv')
+    df = pd.read_csv(path+'conferences.csv')
     df.to_csv(path_db + "/conferences.csv", index=False)
     p1 = "file:///conferences.csv"
 
@@ -325,8 +390,8 @@ def add_conferences(path, path_db):
 
 
 def add_edge_papers_to_conference(path, path_db):
-    df_conf = pd.read_csv('../data/conferences.csv')
-    df_papers = pd.read_csv(path_db+'/papers.csv')
+    df_conf = pd.read_csv(path + 'conferences.csv')
+    df_papers=pd.read_csv(path_db+'/papers.csv')
 
     lpapers = list(df_papers['title'])
     lconf = list(df_conf['conference'])
@@ -337,7 +402,7 @@ def add_edge_papers_to_conference(path, path_db):
     conference_assignment = []
 
     for i in range(n):
-        editions.append(randint(1,20))
+        editions.append(randint(1,8))
         year.append(randint(2017,2023))
         conference_assignment.append(lconf[randint(0,len(lconf)-1)])
 
@@ -359,20 +424,25 @@ def add_edge_papers_to_conference(path, path_db):
 
 
 def add_topics(path, path_db):
-    df_papers = pd.read_csv(path_db + '/papers.csv', nrows=5000)
+    df_papers = pd.read_csv(path_db+'/papers.csv')
     lpapers = list(df_papers['title'])
     keywords = list(df_papers['abstract'])
     i = 0
 
+    db_kw=['data_management', 'indexing', 'data_modeling', 'big_data', 'data_processing', 'data_storage','data_querying']
+
+
     for abs in keywords:
         w = abs.split()
         keys = sample(w, min(len(w)-1, randint(2,3)))
-
+        if randint(0,10)<8:
+            keys.append(random.choice(db_kw))
         keywords[i] = ':'.join(keys)
         i += 1
 
-    df_topics = pd.read_csv('../data/topics.csv')
+    df_topics = pd.read_csv(path+'topics.csv')
     ltopics = list(df_topics['Topics'])
+
     topics = [None] * 5000
 
     for i in range(len(topics)):
@@ -402,7 +472,8 @@ def add_topics(path, path_db):
 
 
 def add_cities(path, path_db):
-    df = pd.read_csv('../data/worldcities.csv', nrows=50)
+    df = pd.read_csv(path + 'worldcities.csv')
+
     df.to_csv(path_db + "/cities.csv", index=False)
     p1 = "file:///cities.csv"
 
@@ -415,51 +486,22 @@ def add_cities(path, path_db):
     return
 
 
-def add_organizations(path, path_db):
-    #read organizations
-    df = pd.read_csv('../data/organizations.csv')
-    org = list(df['organizations'])
-    df.to_csv(path_db + "/organizations.csv", index=False)
-    p1 = "file:///organizations.csv"
-
-    # read authors
-    df = pd.read_csv(path + 'dblp_author.csv', header=[0], nrows=2500, sep=';')
-    df.rename(columns={':ID': 'id', 'author:string': 'author'}, inplace=True)
-    df['organization'] = [random.choice(org) for i in range(df.shape[0])]
-    df.to_csv(path_db + "/organizations_edges.csv", index=False)
-    p2 = "file:///organizations_edges.csv"
-
-    query1 = '''
-            LOAD CSV WITH HEADERS FROM $p1 AS line
-            CREATE(a:Organization {name: line.organizations})
-            '''
-
-    query2 = '''
-            LOAD CSV WITH HEADERS FROM $p2 AS line
-            MATCH (a:Author {id: line.id}), (org:Organization {name: line.organization})
-            CREATE (a)-[r:is_affiliated]->(org)            
-            '''
-
-    conn.query(query1, parameters={'p1': p1})
-    conn.query(query2, parameters={'p2': p2})
-
-    return
-
-
 if __name__ == "__main__":
-    #paths_file = open('src/paths.txt', 'r')
-    #path = paths_file.readline()[:-1] # Porque lee el \n del salto de linea
-    #path_db = paths_file.readline()
-    path = '/Users/lop1498/Desktop/MDS/Q2/SDM/lab1/data/'
-    path_db = '/Users/lop1498/Library/Application Support/Neo4j Desktop/Application/relate-data/dbmss/dbms-a925e2f5-b2ac-42e3-b89e-1ea1b962a96b/import'
+    paths_file = open('paths.txt', 'r')
+    path = paths_file.readline()[:-1] # Porque lee el \n del salto de linea
+    path_db = paths_file.readline()
+    # path = '/Users/lop1498/Desktop/MDS/Q2/SDM/lab1/data/'
+    # path_db = '/Users/lop1498/Library/Application Support/Neo4j Desktop/Application/relate-data/dbmss/dbms-a925e2f5-b2ac-42e3-b89e-1ea1b962a96b/import'
+    start_time = time.time()
 
     clean_database()
-    add_articles(path, path_db)
-    n = add_authors(path, path_db)
-    add_papers(path, path_db)
-    add_papers_authors(path, path_db, n)
-    add_organizations(path, path_db)
     add_cities(path, path_db)
     add_conferences(path, path_db)
-    add_edge_papers_to_conference(path,path_db)
+    add_papers(path, path_db)
+    add_articles(path, path_db)
+    # add_authors(path, path_db)
+    # add_papers_authors(path, path_db)
+    # add_edge_papers_to_conference(path,path_db)
     # add_topics(path, path_db)
+
+    print("--- %s seconds ---" % (time.time() - start_time))
