@@ -415,7 +415,7 @@ def add_edge_papers_to_conference(path, path_db):
     query1 = '''
                 LOAD CSV WITH HEADERS FROM $p1 AS line
                 MATCH (pap:Paper {title: line.Paper}), (co:Conference {name: line.Conference})
-                CREATE (pap)-[r:published_in {Edition: line.Edition, Year: line.Year}]->(co)
+                CREATE (pap)-[r:published_conf {Edition: line.Edition, Year: line.Year}]->(co)
                 '''
 
     conn.query(query1, parameters={'p1': p1})
@@ -432,37 +432,50 @@ def add_topics(path, path_db):
     db_kw=['data_management', 'indexing', 'data_modeling', 'big_data', 'data_processing', 'data_storage','data_querying']
 
 
-    for abs in keywords:
-        w = abs.split()
-        keys = sample(w, min(len(w)-1, randint(2,3)))
-        if randint(0,10)<8:
-            keys.append(random.choice(db_kw))
-        keywords[i] = ':'.join(keys)
-        i += 1
+    
 
     df_topics = pd.read_csv(path+'topics.csv')
     ltopics = list(df_topics['Topics'])
+    
+    paperf=[]
+    keysf = []
+    topicf = []
 
-    topics = [None] * 5000
+    for i in range(len(lpapers)):
+        setoftopics = set(ltopics)
+        w = keywords[i].split()
+        keys = sample(w, min(len(w)-1, randint(2,5)))
 
-    for i in range(len(topics)):
-        topics[i] = choice(ltopics)
+        if randint(0,10)<10:
+                keysf.append(random.choice(db_kw))
+                paperf.append(lpapers[i])
 
-    df = pd.DataFrame({'paper': lpapers, 'keywords' : keywords, 'topics' : topics})
-    df.to_csv(path + "paper_key_topic.csv", index=False)
+        for _ in range(min(len(keys)-1, randint(2,3))):           
 
-    p1 = "file:///topics.csv"
-    p2 = "file:///paper_key_topic.csv"
+            paperf.append(lpapers[i])
+            keysf.append(choice(keys))
+
+    df = pd.DataFrame({'paper': paperf, 'keywords' : keysf})
+    df.to_csv(path_db + "/paper_key.csv", index=False)
+
+    keysunique = list(set(keysf))
+
+    df_keys = pd.DataFrame({'key': keysunique})
+    df_keys.to_csv(path_db + "/keywords.csv", index=False)
+
+
+    p1 = "file:///keywords.csv"
+    p2 = "file:///paper_key.csv"
 
     query1 = '''
                 LOAD CSV WITH HEADERS FROM $p1 AS line
-                CREATE(t:Topic {name:line.Topics})
+                CREATE(k:Keyword {name:line.key})
             '''
 
     query2 = '''
                 LOAD CSV WITH HEADERS FROM $p2 AS line
-                MATCH (pap:Paper {title: line.paper}), (to:Topic {name: line.topics})
-                CREATE (pap)-[r:about {keywords:split(coalesce(line.keywords,""), ":")}]->(to)
+                MATCH (pap:Paper {title: line.paper}), (to:Keyword {name: line.keywords})
+                MERGE (pap)-[r:contains]->(to)
             '''
 
     conn.query(query1, parameters={'p1': p1})
@@ -499,9 +512,9 @@ if __name__ == "__main__":
     add_conferences(path, path_db)
     add_papers(path, path_db)
     add_articles(path, path_db)
-    # add_authors(path, path_db)
-    # add_papers_authors(path, path_db)
-    # add_edge_papers_to_conference(path,path_db)
-    # add_topics(path, path_db)
+    add_authors(path, path_db)
+    add_papers_authors(path, path_db)
+    add_edge_papers_to_conference(path,path_db)
+    add_topics(path, path_db)
 
     print("--- %s seconds ---" % (time.time() - start_time))
